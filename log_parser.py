@@ -5,81 +5,93 @@ import matplotlib.patches as patches
 
 class LogData:
 
-    def __init__(self, run_time: float, idle_time: float, comms_time: float, num_tasks: float, timeline: list[tuple[str, float]]):
+    def __init__(self, run_time: float, idle_time: float, num_tasks: float, timeline: list[tuple[str, float]]):
         self.run_time = run_time
         self.idle_time = idle_time
-        self.comms_time = comms_time
         self.num_tasks = num_tasks
         self.timeline = timeline
 
     def __str__(self) -> str:
-        return f"Run Time: {self.run_time} Idle Time: {self.idle_time} Misc Time: {self.comms_time} Num Tasks: {self.num_tasks}"
+        return f"Run Time: {self.run_time} Idle Time: {self.idle_time} Num Tasks: {self.num_tasks}"
     
-    def plot_timeline(self, axes: plt.Axes, y_height:float, width):
-        x = 0
+    def plot_timeline(self, axes: plt.Axes, y_height:float, width: float):
+        color_map = {
+            "idle": "r",
+            "instantiate": "g",
+            "qsd": "c",
+            "decompose": "m",
+        }
+        x = 20
         for item in self.timeline:
-            if item[0] == "step":
-                rect = patches.Rectangle((x, y_height), width=item[1], height=width, edgecolor="b", facecolor="b")
-                axes.add_patch(rect)
-            elif item[0] == "idle":
-                rect = patches.Rectangle((x, y_height), width=item[1], height=width, edgecolor="r", facecolor="r")
-                axes.add_patch(rect)
+            task_name, start, duration = item
+            color = color_map.get(task_name, "b")
+            rect = patches.Rectangle((start, y_height), width=duration, height=width, edgecolor=color, facecolor=color)
+            axes.add_patch(rect) 
+            x = start + duration
             
-            x += item[1]
         return x
+
 
 
 class Parser:
 
     def __init__(self, worker_id: int) -> None:
         self.worker_id = worker_id
-        self.sent_tasks = 0
-        self.completed_tasks = 0
-        self.run_time = 0
-        self.idle_time = 0
-        self.comms_time = 0
-        self.misc_time = 0
-        self.prev_run_time = None
-        self.prev_idle_time = None
-        self.prev_comms_time = None
-        self.prev_misc_time = None
+        # self.sent_tasks = 0
+        # self.completed_tasks = 0
+        self.prog_start_time = None
+        # self.run_time = 0
+        # self.idle_time = 0
+        self.start_task_time = None
         self.timeline = []
     
     def get_log_data(self):
-        return LogData(self.run_time, self.idle_time, self.misc_time, max(self.sent_tasks, self.completed_tasks), self.timeline)
+        return LogData(0, 0, 0, self.timeline)
+        # return LogData(self.run_time, self.idle_time, max(self.sent_tasks, self.completed_tasks), self.timeline)
     
     def split_log_line(line: str):
         if not line.startswith("Worker"):
-            return [-1, "", "", 0.0]
-        arr = line.split("|")
-        arr = [x.strip() for x in arr]
-        arr[0] = int(arr[0].removeprefix("Worker "))
-        arr[-1] = float(arr[-1])
-        return arr
+            return []
+        log_lines = line.split("Worker ")
+        all_arrs = []
+        for log_line in log_lines:
+            if len(log_line) == 0:
+                continue
+            arr = log_line.split("|")
+            arr = [x.strip() for x in arr]
+            arr[0] = int(arr[0])
+            arr[-1] = float(arr[-1])
+            all_arrs.append(arr)
+        return all_arrs
 
     def parse_line(self, worker_id: int, task_type: str, task_name: str, time: float):
         if worker_id != self.worker_id:
             return
         
-        if self.prev_misc_time is None:
-            self.prev_misc_time = time
-        
+        if self.prog_start_time is None:
+            self.prog_start_time = time
+            assert(task_type.startswith("start"))
+
         if task_type == "finish step": # Actually performing a step
-            self.run_time += time - self.prev_run_time
-            self.prev_misc_time = time
-            self.timeline.append(("step", time - self.prev_run_time))
+            assert task_name == self.cur_task
+            # Add to timeline (task_name, start_time, duration_time)
+            time_obj = (task_name, self.start_task_time, time - self.start_task_time - self.prog_start_time)
+            # print(time_obj)
+            self.timeline.append(time_obj)
         elif task_type == "start step": # Starting a step
-            self.prev_run_time = time
-            self.misc_time = time - self.prev_misc_time
-            self.timeline.append(("misc", time - self.prev_misc_time))
-        elif task_type == "start idle": 
-            self.prev_idle_time = time
-            self.misc_time = time - self.prev_misc_time
-            self.timeline.append(("misc", time - self.prev_misc_time))
-        elif task_type == "finish idle":
-            self.idle_time += time - self.prev_idle_time
-            self.timeline.append(("idle", time - self.prev_misc_time))
-            self.prev_misc_time = time
+            # Track start of task time
+            self.start_task_time = time - self.prog_start_time
+            self.cur_task = task_name
+        elif task_type == "start idle":
+            # Track start of idle
+            self.start_task_time = time - self.prog_start_time
+            self.cur_task = "idle"
+        elif task_type == "stop idle" or task_type == "finish idle":
+            assert self.cur_task == "idle"
+            # Add to timeline ("idle", start_time, duration_time)
+            time_obj = (task_name, self.start_task_time, time - self.start_task_time - self.prog_start_time)
+            # print(time_obj)
+            self.timeline.append(time_obj)
         
 
 def parse_worker(worker_id: int) -> LogData:
@@ -87,33 +99,32 @@ def parse_worker(worker_id: int) -> LogData:
     parser = Parser(worker_id)
     with open(file_name, "r") as f_obj:
         for line in f_obj.readlines():
-            parser.parse_line(*Parser.split_log_line(line))
-
+            lines = Parser.split_log_line(line)
+            for line in lines:
+                parser.parse_line(*line)
     return parser.get_log_data()
+
 
 if __name__ == '__main__':
     global file_name
-    # file_name = sys.argv[1]
-    method = sys.argv[1]
-    block_size = sys.argv[2]
-    fig = plt.figure(figsize=(40, 15))
-    axes = fig.subplots(1,6)
+    file_name = sys.argv[1]
+    num_workers = int(sys.argv[2])
+    out_file_name = sys.argv[3]
+    fig, axes = plt.subplots(1,1, figsize=(10, 10))
 
-    for i,num_workers in enumerate([2,4,8,16,32,64]):
-        file_name = f"/pscratch/sd/j/jkalloor/profiler/bqskit/{method}/{block_size}/{num_workers}/log.txt"
-        with mp.Pool(processes=num_workers) as pool:
-            log_data = pool.map(parse_worker, range(num_workers))
+    with mp.Pool(processes=num_workers) as pool:
+        log_data = pool.map(parse_worker, range(num_workers))
 
-        max_x = 20
-        for j, data in enumerate(log_data):
-            x = data.plot_timeline(axes[i], j*5 + 1, 4)
-            if x > max_x:
-                max_x = x
+    max_x = 20
+    for j, data in enumerate(log_data):
+        x = data.plot_timeline(axes, j*5 + 1, 4)
+        if x > max_x:
+            max_x = x
 
-        axes[i].set_ybound(0, num_workers*5 + 2)
-        axes[i].set_xbound(0, x)
+    axes.set_ybound(0, num_workers*5 + 2)
+    axes.set_xbound(0, x)
 
-    fig.savefig(f"{method}_{block_size}.png")
+    fig.savefig(out_file_name)
 
 
 
