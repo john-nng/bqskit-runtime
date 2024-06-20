@@ -12,6 +12,7 @@ import socket
 import sys
 import time
 import traceback
+from pathlib import Path
 from multiprocessing import Process
 from multiprocessing.connection import Client
 from multiprocessing.connection import Connection
@@ -131,7 +132,8 @@ def sigint_handler(signum: int, _: FrameType | None, node: ServerBase) -> None:
 class ServerBase:
     """Base class for all non-worker process nodes in the BQSKit Runtime."""
 
-    def __init__(self) -> None:
+    def __init__(self, 
+                 log_file: str | None = None) -> None:
         """Initialize a runtime node component."""
 
         self.lower_id_bound = 0
@@ -160,6 +162,14 @@ class ServerBase:
 
         self.conn_to_employee_dict: dict[Connection, RuntimeEmployee] = {}
         """Used to find the employee associated with a message."""
+
+        if log_file:
+            log_file_path = Path(log_file)
+            log_file_path.parent.mkdir(exist_ok=True, parents=True)
+            self.log_file = open(log_file_path, "w")
+            print("Piping log to: ", log_file)
+        else:
+            self.log_file = sys.stdout
 
         # Servers do not need blas threads
         set_blas_thread_counts(1)
@@ -258,6 +268,7 @@ class ServerBase:
         port: int = default_worker_port,
         logging_level: int = logging.WARNING,
         num_blas_threads: int = 1,
+        log_file: bool = False
     ) -> None:
         """
         Spawn worker processes.
@@ -293,6 +304,7 @@ class ServerBase:
                 kwargs={
                     'logging_level': logging_level,
                     'num_blas_threads': num_blas_threads,
+                    'log_file': log_file
                 },
             )
             procs[w_id].daemon = True
@@ -510,6 +522,10 @@ class ServerBase:
         # Instruct employees to shutdown
         for employee in self.employees:
             employee.initiate_shutdown()
+            _, worker_logs = employee.conn.recv()
+            for log in worker_logs:
+                print(log, file=self.log_file, flush=True)
+            
 
         for employee in self.employees:
             employee.complete_shutdown()

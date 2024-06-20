@@ -147,7 +147,7 @@ class Worker:
     tasks, which usually require much more memory than delayed ones.
     """
 
-    def __init__(self, id: int, conn: Connection) -> None:
+    def __init__(self, id: int, conn: Connection, log_file: str | None = None) -> None:
         """
         Initialize a worker with no tasks.
 
@@ -159,6 +159,11 @@ class Worker:
         """
         self._id = id
         self._conn = conn
+        self.logs = []
+
+        self.idle_time_start = False
+
+        self.prev_time = time.time()
 
         self._tasks: dict[RuntimeAddress, RuntimeTask] = {}
         """Tracks all started, unfinished tasks on this worker."""
@@ -271,8 +276,12 @@ class Worker:
             _logger.debug(f'Received message {msg.name}.')
             _logger.log(1, f'Payload: {payload}')
 
+            self.prev_time = time.time()
+
             # Process message
             if msg == RuntimeMessage.SHUTDOWN:
+                # Print log
+                self._send(RuntimeMessage.PROFILE, self.logs)
                 if sys.platform == 'win32':
                     os.kill(os.getpid(), 9)
                 else:
@@ -294,10 +303,12 @@ class Worker:
                 self.read_receipt_mutex.release()
 
             elif msg == RuntimeMessage.RESULT:
+                # print(f"Worker {self._id}: Receiving result, handling the result", time.time())
                 result = cast(RuntimeResult, payload)
                 self._handle_result(result)
 
             elif msg == RuntimeMessage.CANCEL:
+                # print(f"Worker {self._id}: Received cancel", time.time())
                 addr = cast(RuntimeAddress, payload)
                 self._handle_cancel(addr)
                 # TODO: preempt?
@@ -389,12 +400,16 @@ class Worker:
 
             except Empty:
                 payload = (1, self.most_recent_read_submit)
-                self._conn.send((RuntimeMessage.WAITING, payload))
+                self._send(RuntimeMessage.WAITING, payload)
+                if not self.idle_time_start:
+                    self.logs.append(f"Worker {self._id} | start idle | idle | {time.time()}")
+                    self.idle_time_start = True
                 self.read_receipt_mutex.release()
+                print(f"Worker {self._id} | start idle | idle | {time.time()}")
                 # Block for new message. Can release lock here since the
                 # the `self.most_recent_read_submit` has been used.
                 addr = self._ready_task_ids.get()
-
+                print(f"Worker {self._id} | stop idle | idle | {time.time()}")
             else:
                 self.read_receipt_mutex.release()
 
@@ -427,18 +442,27 @@ class Worker:
         if task is None:
             return
 
+        if self.idle_time_start:
+            self.logs.append(f"Worker {self._id} | finish idle | idle | {time.time()}")
+            self.idle_time_start = False
         try:
             self._active_task = task
 
+            # Just time this for run time
+
             # Perform a step of the task and get the future it awaits on
+            self.logs.append(f"Worker {self._id} | start step | {task.task_name} | {time.time()}")
             future = task.step(self._get_desired_result(task))
+            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} stepped | {time.time()}")
 
             self._process_await(task, future)
 
         except StopIteration as e:
+            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} finished | {time.time()}")
             self._process_task_completion(task, e.value)
 
         except Exception:
+            self.logs.append(f"Worker {self._id} | finish step | error | {time.time()}")
             assert self._active_task is not None  # for type checker
 
             # Bubble up errors
@@ -449,6 +473,8 @@ class Worker:
 
         finally:
             self._active_task = None
+        
+        # print(f"Worker {self._id}: Finished Task", time.time())
 
     def _process_await(self, task: RuntimeTask, future: RuntimeFuture) -> None:
         """Process a task's await request."""
@@ -483,8 +509,6 @@ class Worker:
         packaged_result = RuntimeResult(task.return_address, result, self._id)
 
         if task.return_address not in self._tasks:
-            # print(f'Task was cancelled: {task.return_address},
-            # {task.fnargs[0].__name__}')
             return
 
         if task.return_address.worker_id == self._id:
@@ -715,6 +739,7 @@ def start_worker(
     cpu: int | None = None,
     logging_level: int = logging.WARNING,
     num_blas_threads: int = 1,
+    log_file: str | None = None,
     log_client: bool = False,
 ) -> None:
     """Start this process's worker."""
@@ -778,7 +803,7 @@ def start_worker(
 
     # Build and start worker
     global _worker
-    _worker = Worker(w_id, conn)
+    _worker = Worker(w_id, conn, log_file=log_file)
     _worker._loop()
 
 

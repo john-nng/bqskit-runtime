@@ -78,6 +78,8 @@ class RuntimeTask:
 
         self.wake_on_next: bool = False
         """Set to true if this task should wake immediately on a result."""
+        func_name = getattr(self.fnargs[0], '__name__', 'Unknown')
+        self.task_name = func_name
 
         self.log_context: dict[str, str] = log_context
 

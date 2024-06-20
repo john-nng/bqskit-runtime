@@ -36,6 +36,7 @@ class AttachedServer(DetachedServer):
         num_workers: int = -1,
         port: int = default_server_port,
         worker_port: int = default_worker_port,
+        log_file: str | None = None,
         log_level: int = logging.WARNING,
         num_blas_threads: int = 1,
     ) -> None:
@@ -72,7 +73,7 @@ class AttachedServer(DetachedServer):
         _handler.setFormatter(_formatter)
         logging.getLogger().addHandler(_handler)
 
-        ServerBase.__init__(self)
+        ServerBase.__init__(self, log_file)
 
         # See DetachedServer for more info on the following fields:
         self.clients: dict[Connection, set[uuid.UUID]] = {}
@@ -97,12 +98,12 @@ class AttachedServer(DetachedServer):
             worker_port,
             log_level,
             num_blas_threads,
+            self.log_file
         )
 
     def handle_disconnect(self, conn: Connection) -> None:
         """A client disconnect in attached mode is equal to a shutdown."""
         self.handle_shutdown()
-
 
 def start_attached_server(num_workers: int, **kwargs: Any) -> None:
     """Start a runtime server in attached mode."""
