@@ -281,7 +281,7 @@ class Worker:
             # Process message
             if msg == RuntimeMessage.SHUTDOWN:
                 # Print log
-                self._send(RuntimeMessage.PROFILE, self.logs)
+                self._conn.send((RuntimeMessage.PROFILE, self.logs))
                 if sys.platform == 'win32':
                     os.kill(os.getpid(), 9)
                 else:
@@ -303,12 +303,10 @@ class Worker:
                 self.read_receipt_mutex.release()
 
             elif msg == RuntimeMessage.RESULT:
-                # print(f"Worker {self._id}: Receiving result, handling the result", time.time())
                 result = cast(RuntimeResult, payload)
                 self._handle_result(result)
 
             elif msg == RuntimeMessage.CANCEL:
-                # print(f"Worker {self._id}: Received cancel", time.time())
                 addr = cast(RuntimeAddress, payload)
                 self._handle_cancel(addr)
                 # TODO: preempt?
@@ -342,9 +340,6 @@ class Worker:
             task = self._tasks[box.dest_addr]
 
             if task.wake_on_next or box.ready:
-                # print(f'Worker {self._id} is waking task
-                # {task.return_address}, with {task.wake_on_next=},
-                # {box.ready=}')
                 self._ready_task_ids.put(box.dest_addr)  # Wake it
                 box.dest_addr = None  # Prevent double wake
 
@@ -400,16 +395,14 @@ class Worker:
 
             except Empty:
                 payload = (1, self.most_recent_read_submit)
-                self._send(RuntimeMessage.WAITING, payload)
+                self._conn.send((RuntimeMessage.WAITING, payload))
                 if not self.idle_time_start:
                     self.logs.append(f"Worker {self._id} | start idle | idle | {time.time()}")
                     self.idle_time_start = True
                 self.read_receipt_mutex.release()
-                print(f"Worker {self._id} | start idle | idle | {time.time()}")
                 # Block for new message. Can release lock here since the
                 # the `self.most_recent_read_submit` has been used.
                 addr = self._ready_task_ids.get()
-                print(f"Worker {self._id} | stop idle | idle | {time.time()}")
             else:
                 self.read_receipt_mutex.release()
 
@@ -453,12 +446,12 @@ class Worker:
             # Perform a step of the task and get the future it awaits on
             self.logs.append(f"Worker {self._id} | start step | {task.task_name} | {time.time()}")
             future = task.step(self._get_desired_result(task))
-            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} stepped | {time.time()}")
+            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} | {time.time()}")
 
             self._process_await(task, future)
 
         except StopIteration as e:
-            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} finished | {time.time()}")
+            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} | {time.time()}")
             self._process_task_completion(task, e.value)
 
         except Exception:
@@ -473,8 +466,6 @@ class Worker:
 
         finally:
             self._active_task = None
-        
-        # print(f"Worker {self._id}: Finished Task", time.time())
 
     def _process_await(self, task: RuntimeTask, future: RuntimeFuture) -> None:
         """Process a task's await request."""
@@ -497,8 +488,6 @@ class Worker:
         #     #     raise RuntimeError(m)
         #     task.wake_on_next = True
         task.wake_on_next = future._next_flag
-        # print(f'Worker {self._id} is waiting on task
-        # {task.return_address}, with {task.wake_on_next=}')
 
         if box.ready:
             self._ready_task_ids.put(task.return_address)
