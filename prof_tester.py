@@ -1,14 +1,14 @@
 """This example shows how to synthesize a circuit with BQSKit."""
 from __future__ import annotations
 
-from bqskit import compile, Circuit
+from bqskit.ir import Circuit
 from bqskit.passes import *
 from bqskit.compiler import Compiler
 import sys
 import time
 
 # Construct the unitary as an NumPy array
-circ = Circuit.from_file("tfxy_5.qasm")
+circ = Circuit.from_file("hubbard_4.qasm")
 circ.remove_all_measurements()
 
 print(circ.gate_counts)
@@ -22,7 +22,7 @@ num_workers = int(sys.argv[3])
 
 # Model: Log to Timeline
 
-compiler = Compiler(num_workers=num_workers, run_profiler=True)
+compiler = Compiler(num_workers=num_workers, log_file="log.txt")
 
 start_time = time.time()
 
