@@ -94,8 +94,8 @@ class Parser:
             self.timeline.append(time_obj)
         
 
-def parse_worker(worker_id: int) -> LogData:
-    global file_name
+def parse_worker(args) -> LogData:
+    worker_id, file_name = args
     parser = Parser(worker_id)
     with open(file_name, "r") as f_obj:
         for line in f_obj.readlines():
@@ -106,23 +106,39 @@ def parse_worker(worker_id: int) -> LogData:
 
 
 if __name__ == '__main__':
-    global file_name
     file_name = sys.argv[1]
     num_workers = int(sys.argv[2])
     out_file_name = sys.argv[3]
     fig, axes = plt.subplots(1,1, figsize=(10, 10))
 
     with mp.Pool(processes=num_workers) as pool:
-        log_data = pool.map(parse_worker, range(num_workers))
+        log_data = pool.map(parse_worker, [(i, file_name) for i in range(num_workers)])
 
     max_x = 20
     for j, data in enumerate(log_data):
-        x = data.plot_timeline(axes, j*5 + 1, 4)
+        x = data.plot_timeline(axes, j, 1)
         if x > max_x:
             max_x = x
 
-    axes.set_ybound(0, num_workers*5 + 2)
+    axes.set_ybound(0, num_workers)
     axes.set_xbound(0, x)
+
+    # Add titles
+    axes.set_title('Worker Task Timeline', fontsize=20)
+    axes.set_xlabel('Time (seconds)', fontsize=14)
+    axes.set_ylabel('Worker ID', fontsize=14)
+
+    #Add Color Legend
+    color_map = {
+            "idle": "r",
+            "instantiate": "g",
+            "qsd": "c",
+            "decompose": "m",
+            "send_message": "b",
+        }
+    legend_field = [patches.Patch(color=color, label=label) for label, color in color_map.items()]
+    axes.legend(handles = legend_field, bbox_to_anchor=(1, 1.35), loc='upper right', fontsize=14)
+    fig.subplots_adjust(top=0.75)  # Adjust right margin to make space for the legend
 
     fig.savefig(out_file_name)
 

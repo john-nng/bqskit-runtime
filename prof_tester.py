@@ -8,7 +8,7 @@ import sys
 import time
 
 # Construct the unitary as an NumPy array
-circ = Circuit.from_file("hubbard_4.qasm")
+circ = Circuit.from_file("test.qasm")
 circ.remove_all_measurements()
 
 print(circ.gate_counts)

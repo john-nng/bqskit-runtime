@@ -107,6 +107,8 @@ class AttachedServer(DetachedServer):
 
 def start_attached_server(num_workers: int, **kwargs: Any) -> None:
     """Start a runtime server in attached mode."""
+    import multiprocessing as mp
+    mp.set_start_method("fork")
     # Initialize the server
     server = AttachedServer(num_workers, **kwargs)
 
