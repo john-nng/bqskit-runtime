@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import numpy as np
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -129,7 +130,11 @@ if __name__ == '__main__':
     axes.set_title(f"Worker Task Timeline: {task} {num_workers} Worker(s)", fontsize=20)
     axes.set_xlabel('Time (seconds)', fontsize=14)
     axes.set_ylabel('Worker ID', fontsize=14)
-    # axes.set_yticks() Add ticks later
+    # Adjust y-axis ticks
+    y_ticks = np.arange(0.5, num_workers, 1)  # Center ticks between integers
+    y_tick_labels = np.arange(1, num_workers + 1, 1)  # Integer labels starting from 1
+    axes.set_yticks(y_ticks)
+    axes.set_yticklabels(y_tick_labels.astype(int))  # Ensure integer display
 
     #Add Color Legend
     color_map = {
