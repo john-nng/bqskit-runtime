@@ -22,7 +22,7 @@ num_workers = int(sys.argv[3])
 
 # Model: Log to Timeline
 
-compiler = Compiler(num_workers=num_workers, log_file="log.txt")
+compiler = Compiler(num_workers=num_workers, log_file=f"logs/{task}_{block_size}_{num_workers}.txt")
 
 start_time = time.time()
 

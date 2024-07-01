@@ -1,4 +1,4 @@
-import os
+
 from bqskit import Circuit, compile
 from bqskit.compiler import Compiler
 
@@ -10,9 +10,8 @@ from bqskit.passes.synthesis.qsearch import QSearchSynthesisPass
 #enable_logging(True)
 
 # Specify the full path to the QASM file
-# qasm_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hubbard_4.qasm')
-qasm_file_path = 'test.qasm'
 
+qasm_file_path = 'test.qasm'
 basic_gate_deletion_workflow = Workflow([
     QuickPartitioner(3),  # Partition into 3-qubit blocks
     ForEachBlockPass(ScanningGateRemovalPass()),  # Apply gate deletion to each block (in parallel)
@@ -27,11 +26,12 @@ qsearch_workflow = [
         QSearchSynthesisPass(instantiate_options=instantiate_options),
         # ScanningGateRemovalPass(instantiate_options=instantiate_options)
     ),
+    UnfoldPass(),
 ]
 
 # Load a circuit from QASM
 circuit = Circuit.from_file(qasm_file_path)
-compiler = Compiler(runtime_log_level=10)
+compiler = Compiler(runtime_log_level=10, log_file='log.txt', num_workers=2)
 
 out_circuit = compiler.compile(circuit, workflow=qsearch_workflow,)
 

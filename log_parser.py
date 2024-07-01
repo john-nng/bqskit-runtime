@@ -2,6 +2,7 @@ import multiprocessing as mp
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import os
 
 class LogData:
 
@@ -97,7 +98,7 @@ class Parser:
 def parse_worker(args) -> LogData:
     worker_id, file_name = args
     parser = Parser(worker_id)
-    with open(file_name, "r") as f_obj:
+    with open(f"logs/{file_name}", "r") as f_obj:
         for line in f_obj.readlines():
             lines = Parser.split_log_line(line)
             for line in lines:
@@ -107,8 +108,8 @@ def parse_worker(args) -> LogData:
 
 if __name__ == '__main__':
     file_name = sys.argv[1]
-    num_workers = int(sys.argv[2])
-    out_file_name = sys.argv[3]
+    num_workers = int(file_name.split('_')[-1].split('.')[0])
+    out_file_name = f"charts/{file_name}.png"
     fig, axes = plt.subplots(1,1, figsize=(10, 10))
 
     with mp.Pool(processes=num_workers) as pool:
@@ -124,9 +125,11 @@ if __name__ == '__main__':
     axes.set_xbound(0, x)
 
     # Add titles
-    axes.set_title('Worker Task Timeline', fontsize=20)
+    task = file_name.split('_')[0]
+    axes.set_title(f"Worker Task Timeline: {task} {num_workers} Worker(s)", fontsize=20)
     axes.set_xlabel('Time (seconds)', fontsize=14)
     axes.set_ylabel('Worker ID', fontsize=14)
+    # axes.set_yticks() Add ticks later
 
     #Add Color Legend
     color_map = {
@@ -139,6 +142,9 @@ if __name__ == '__main__':
     legend_field = [patches.Patch(color=color, label=label) for label, color in color_map.items()]
     axes.legend(handles = legend_field, bbox_to_anchor=(1, 1.35), loc='upper right', fontsize=14)
     fig.subplots_adjust(top=0.75)  # Adjust right margin to make space for the legend
+
+    # Create the directory if it doesn't exist
+    os.makedirs(os.path.dirname(out_file_name), exist_ok=True)
 
     fig.savefig(out_file_name)
 
