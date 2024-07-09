@@ -309,6 +309,8 @@ class ServerBase:
             )
             procs[w_id].daemon = True
             procs[w_id].start()
+            # Log spawning of workers
+            self.log_file.write(f"Spawn Worker {procs[w_id]} on Server | {time.time()}\n")
             _logger.debug(f'Stated worker process {i}.')
 
         # Listen for the worker connections
@@ -631,6 +633,8 @@ class ServerBase:
                 continue
 
             self.outgoing.put((e.conn, RuntimeMessage.SUBMIT_BATCH, assignment))
+            # Log task creation to a file
+            [self.log_file.write(f"Worker {e.id} | Create | Task {task[1].task_id} | {time.time()} \n") for task in enumerate(assignment)]
 
             e.num_tasks += num_tasks
             e.num_idle_workers -= min(num_tasks, e.num_idle_workers)

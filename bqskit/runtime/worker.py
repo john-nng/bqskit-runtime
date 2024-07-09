@@ -63,6 +63,7 @@ class WorkerMailbox:
     @property
     def has_task_waiting(self) -> bool:
         """Return True if a task is waiting on the result of this box."""
+
         return self.dest_addr is not None
 
     @staticmethod
@@ -320,6 +321,8 @@ class Worker:
     def _add_task(self, task: RuntimeTask) -> None:
         """Start a task and add it to the loop."""
         self._tasks[task.return_address] = task
+        # Log start of a task
+        self.log_start(task)
         task.start()
         self._ready_task_ids.put(task.return_address)
 
@@ -376,6 +379,21 @@ class Worker:
             if not t.is_descendant_of(addr)
         ]
 
+    def _get_parent_task(self, task: RuntimeTask) -> str | None:
+        try:
+            parent_address = task.breadcrumbs[-1]
+        except IndexError:
+                parent_address = None
+        return parent_address
+    def log_create(self, task: RuntimeTask) -> None:
+        self.logs.append(f"Worker {self._id} | Created | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
+
+    def log_start(self, task: RuntimeTask) -> None:
+        self.logs.append(f"Worker {self._id} | Start | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
+
+    def log_finish(self, task: RuntimeTask) -> None:
+        self.logs.append(f"Worker {self._id} | Finish | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
+
     def _get_next_ready_task(self) -> RuntimeTask | None:
         """Return the next ready task if one exists, otherwise block."""
         while True:
@@ -397,7 +415,7 @@ class Worker:
                 payload = (1, self.most_recent_read_submit)
                 self._conn.send((RuntimeMessage.WAITING, payload))
                 if not self.idle_time_start:
-                    self.logs.append(f"Worker {self._id} | start idle | idle | {time.time()}")
+                    self.logs.append(f"Worker {self._id} | Idle start |{time.time()}")
                     self.idle_time_start = True
                 self.read_receipt_mutex.release()
                 # Block for new message. Can release lock here since the
@@ -436,22 +454,26 @@ class Worker:
             return
 
         if self.idle_time_start:
-            self.logs.append(f"Worker {self._id} | finish idle | idle | {time.time()}")
             self.idle_time_start = False
+            self.logs.append(f"Worker {self._id} | Idle Finish | {time.time()}")
         try:
             self._active_task = task
 
             # Just time this for run time
 
+            # TODO: TASK STARTS HERE
+            #self.logs.append(f"STARTED | Task {task.task_id}| {task.task_name} | {time.time()}")
+
             # Perform a step of the task and get the future it awaits on
-            self.logs.append(f"Worker {self._id} | start step | {task.task_name} | {task.breadcrumbs} | {time.time()}")
+            #self.logs.append(f"Worker {self._id} | start step | {task.task_name} | {task.breadcrumbs} | {time.time()}")
             future = task.step(self._get_desired_result(task))
-            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} | {task.breadcrumbs} | {time.time()}")
+            #self.logs.append(f"Worker {self._id} | Finish | Task {task.task_id} | {task.task_name} | {time.time()}")
 
             self._process_await(task, future)
 
         except StopIteration as e:
-            self.logs.append(f"Worker {self._id} | finish step | {task.task_name} | {task.breadcrumbs} | {time.time()}")
+            #self.logs.append(f"Worker {self._id} | finish step | {task.task_name} | {task.breadcrumbs} | {time.time()}")
+            # TODO: TASK IS FINISHED
             self._process_task_completion(task, e.value)
 
         except Exception:
@@ -510,6 +532,8 @@ class Worker:
 
         # Remove task
         self._tasks.pop(task.return_address)
+        # TODO: Log task completion
+        self.log_finish(task)
 
         # Cancel any open tasks
         for mailbox_id in self._active_task.owned_mailboxes:
@@ -586,6 +610,8 @@ class Worker:
             task_name,
             {**self._active_task.log_context, **log_context},
         )
+        #TODO: TASK IS CREATED
+        self.logs.append(f"Task {task.task_id}, Name: {task.task_name} Created | {time.time()}")
 
         # Submit the task (on the next cycle)
         self._conn.send((RuntimeMessage.SUBMIT, task))
@@ -650,8 +676,11 @@ class Worker:
         # Create the tasks
         breadcrumbs = self._active_task.breadcrumbs
         breadcrumbs += (self._active_task.return_address,)
-        tasks = [
-            RuntimeTask(
+        #TODO: TASKS ARE CREATED
+
+        tasks = []
+        for i, fnarg in enumerate(fnargs) :
+            task = RuntimeTask(
                 fnarg,
                 RuntimeAddress(self._id, mailbox_id, i),
                 self._active_task.comp_task_id,
@@ -661,8 +690,8 @@ class Worker:
                 task_name[i],
                 {**self._active_task.log_context, **log_context[i]},
             )
-            for i, fnarg in enumerate(fnargs)
-        ]
+            tasks.append(task)
+            self.log_create(task)
 
         # Submit the tasks
         self._conn.send((RuntimeMessage.SUBMIT_BATCH, tasks))
