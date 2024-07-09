@@ -386,7 +386,7 @@ class Worker:
                 parent_address = None
         return parent_address
     def log_create(self, task: RuntimeTask) -> None:
-        self.logs.append(f"Worker {self._id} | Created | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
+        self.logs.append(f"Worker {self._id} | Create Sub | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
 
     def log_start(self, task: RuntimeTask) -> None:
         self.logs.append(f"Worker {self._id} | Start | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
@@ -415,7 +415,7 @@ class Worker:
                 payload = (1, self.most_recent_read_submit)
                 self._conn.send((RuntimeMessage.WAITING, payload))
                 if not self.idle_time_start:
-                    self.logs.append(f"Worker {self._id} | Idle start |{time.time()}")
+                    # self.logs.append(f"Worker {self._id} | Idle start |{time.time()}") - no log idle for now
                     self.idle_time_start = True
                 self.read_receipt_mutex.release()
                 # Block for new message. Can release lock here since the
@@ -455,7 +455,7 @@ class Worker:
 
         if self.idle_time_start:
             self.idle_time_start = False
-            self.logs.append(f"Worker {self._id} | Idle Finish | {time.time()}")
+            #self.logs.append(f"Worker {self._id} | Idle Finish | {time.time()}") - no log idle for now
         try:
             self._active_task = task
 
