@@ -16,3 +16,9 @@ class RuntimeAddress(NamedTuple):
     worker_id: int
     mailbox_index: int
     mailbox_slot: int
+
+    def __str__(self):
+        return (f"{self.worker_id}:{self.mailbox_index}:{self.mailbox_slot}")
+    
+    def __repr__(self):
+        return self.__str__()

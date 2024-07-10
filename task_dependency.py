@@ -3,112 +3,127 @@ import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
-from enum import IntEnum
-from bqskit.runtime.address import RuntimeAddress
-
-
-class TaskType(IntEnum):
-    """Type of task."""
-    START = 0
-    FINISH = 1
-    CREATE = 2
-    CREATE_SUB = 3
 
 class TaskNode:
-
-    def __init__(self,  worker_id: int, task_id: int, created_time: float, start_time: float = None, duration: float = None, parent: 'TaskNode' = None) -> None:
-        #self.parent = parent
-        self.worker_id = worker_id
-        self.task_id = task_id
-        #self.action = action
-        self.start_time = 0
+    """Representation of a Task"""
+    def __init__(self, 
+        created_time: float, 
+        worker: str, 
+        address: str, 
+        action: str, 
+        start_time: float = None, 
+        duration: float = None, 
+        parent: 'TaskNode' = None
+    ) -> None:
+        """Create the TaskNode Object with task address, worker id, parent address, along with a created timestamp."""
+        self.worker = worker
+        """Worker who is handling this task."""
         self.created_time = created_time
+        """Time of task creation."""
+        self.address = address
+        """Unique identifier of Task in the form of a RuntimeAddress"""
+        self.action = action
+        """Type of Task ex: instansiate, sub_do_work"""
+        self.start_time = 0
+        """Time of task starting. Initially 0 until found Start timestamp in logs."""
+        self.started = False
         self.duration = 0
+        """Time duration from time of start to time of finish. Initially 0 until found Finish timestamp in logs."""
         self.parent = parent
+        """Identifier for direct parent object."""
 
     def __str__(self):
-        parent_info = f"{self.parent.worker_id}, {self.parent.task_id}" if self.parent else "None"
-        duration = self.duration if self.duration else "None"
-        return (f"Worker {self.worker_id} | Task {self.task_id} | Created Time {self.created_time} | Duration {duration} | Parent {parent_info}")
+        # Optional Parent field
+        parent_info = f"{self.parent}" if self.parent else "None"
+        return (f"Task {self.address} | {self.action} | {self.worker} | Parent {parent_info}\nCreated: {self.created_time} | Started: {self.start_time} | Duration: {self.duration} \n")
     
     def __repr__(self):
         return self.__str__()
 
     
-def parse_line(file_path) -> TaskNode:
-    # Read lines
+def parse_lines(file_path) -> dict:
+    """Parse each line in file into TaskNode Object."""
     with open (file_path, "r") as file:
         lines = file.readlines()
 
+    # Task dictionary that stores all TaskNode Objects
     tasks = {}
-
-    for line in lines[4:8]:
-        data = [s.strip() for s in line.split("|")]
-        worker_id = int(data[0].split()[1])
-        action = data[1]
-        task_id = int(data[2].split()[1])
-        task_name = data[3]
-        timestamp = data[-1]
-
-        key = (worker_id, task_id)
-        
-        if action == "Create":
-            task_node = TaskNode(worker_id=worker_id, task_id=task_id, created_time=timestamp, parent=None)
-            tasks[key] = task_node
-        elif action == "Start":
-            task_node = tasks.get(key)
-            if task_node:
-                task_node.start_time = timestamp
-
-        elif action == "Finish":
-                # Calculate the duration for the task
-                task_node = tasks.get(key)
-                if task_node:
-                    task_node.duration = task_node.start_time - task_node.created_time
+    for line in lines:
+        parse_line(line, tasks) # Method will add new objects into tasks automatically
 
     return tasks
 
-def parse_runtime_obj(input: str) -> RuntimeAddress:
-    values = input.split(', ')
-    worker_id = int(values[0].split('=')[1])
-    mailbox_index = int(values[1].split('=')[1])
-    mailbox_slot = int(values[2].split('=')[1])
+def parse_line(line: str, tasks: dict) -> None:
+    """Logic that converts string into TaskNode object that is stored in tasks."""
+    if (not line): return None
+    # Seperate line into columns based on "|" dividers
+    columns = [col.strip() for col in line.split("|")]
+    status = columns[2]
+    address = columns[3]
+    parent = columns[5]
+    key = (address, parent)
+
+    # Creation call is found - create a new task
+    if status == "C":
+        created_time = float(columns[0])
+        worker = columns[1]
+        action = columns[4]
+        tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parent=parent)
+    # Start call is found - update object's start_time field
+    elif status == "S":
+        # Existing Task - grab from tasks dict
+        # May see S again before a F, if already started then dont set start time again
+        start_time = float(columns[0])       
+        if not tasks[key].started:
+            tasks[key].start_time = start_time
+            tasks[key].started = True
+    # Finish call is found - update object's duration field
+    elif status == "F":
+        # Existing Task - grab from tasks dict
+        finish_time = float(columns[0])
+        tasks[key].duration = finish_time - tasks[key].start_time 
     
-    # Create and return a RuntimeAddress object
-    return RuntimeAddress(worker_id, mailbox_index, mailbox_slot)
+    else:
+        ValueError("Could not read line properly")
+        return None
 
-
-def grab_sort_logs(args):
+def process_logs(args):
+    """"Read file -> Sort on global time -> Make times relative -> Write back file"""
     file_name = args
-    out_file_log = f"logs/{file_name[:file_name.find(".")]}_sorted.txt"
+    out_file_log = f"logs/{file_name[:file_name.find(".")]}_processed.txt"
     # Read the file content
     with open(f"logs/{file_name}", "r") as file:
         lines = file.readlines()
 
-    # Parse the lines to extract columns
-    data = []
-    for line in lines:
-        columns = line.strip().split(' | ')
-        data.append(columns)
+    sorted_logs = sort_logs(lines)
 
-    last_column = [float(row[-1]) for row in data]
-    min_value = min(last_column)
-
-    for row in data:
-        row[-1] = str(float(row[-1]) - min_value)
-
-    # Sort the data by completion time (last column)
-    sorted_data = sorted(data, key=lambda x: float(x[-1]))
-
-    map(lambda x: x - min(data[-1]), data[-1])
-
+    # Write back processed file
     with open(out_file_log, 'w') as file:
-        for entry in sorted_data:
+        for entry in sorted_logs:
             file.write(' | '.join(entry) + '\n')
     return out_file_log
 
+def sort_logs(logs: list[str])-> list[str]:
+    # Parse the lines to extract columns
+    data = []
+    for line in logs:
+        columns = line.strip().split(' | ')
+        data.append(columns)
+
+    time_column = [float(row[0]) for row in data]
+    min_value = min(time_column)
+
+    for row in data:
+        row[0] = str(float(row[0]) - min_value)
+
+    # Sort the data by completion time (first column)
+    sorted_data = sorted(data, key=lambda x: float(x[0]))
+
+    return sorted_data
+
 if __name__ == '__main__':
     file_name = sys.argv[1]
-    # Log the sorted original log file
     
-    print(parse_line(grab_sort_logs(sys.argv[1])))
+    processed_file = process_logs(file_name)
+    tasks = parse_lines(processed_file)
+    print(tasks)

@@ -322,7 +322,7 @@ class Worker:
         """Start a task and add it to the loop."""
         self._tasks[task.return_address] = task
         # Log start of a task
-        self.log_start(task)
+        #self.log_start(task)
         task.start()
         self._ready_task_ids.put(task.return_address)
 
@@ -380,13 +380,19 @@ class Worker:
         ]
     
     def log_create(self, task: RuntimeTask) -> None:
-        self.logs.append(f"Worker {self._id} | Create Sub | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {_get_parent_task(task)} | {time.time()}")
+        self.logs.append(f"{time.time()} | W{self._id} | C | {task.return_address} | {task._name} | {_get_parent_task(task)}")
 
     def log_start(self, task: RuntimeTask) -> None:
-        self.logs.append(f"Worker {self._id} | Start | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {_get_parent_task(task)} | {time.time()}")
+        self.logs.append(f"{time.time()} | W{self._id} | S | {task.return_address} | {task._name} | {_get_parent_task(task)}")
 
     def log_finish(self, task: RuntimeTask) -> None:
-        self.logs.append(f"Worker {self._id} | Finish | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {_get_parent_task(task)} | {time.time()}")
+        self.logs.append(f"{time.time()} | W{self._id} | F | {task.return_address} | {task._name} | {_get_parent_task(task)}")
+    
+    def log_pause(self, task: RuntimeTask) -> None:
+        self.logs.append(f"{time.time()} | W{self._id} | P | {task.return_address} | {task._name} | {_get_parent_task(task)}")
+    
+    def log_resume(self, task: RuntimeTask) -> None:
+        self.logs.append(f"{time.time()} | W{self._id} | R | {task.return_address} | {task._name} | {_get_parent_task(task)}")
 
     def _get_next_ready_task(self) -> RuntimeTask | None:
         """Return the next ready task if one exists, otherwise block."""
@@ -455,13 +461,9 @@ class Worker:
 
             # Just time this for run time
 
-            # TODO: TASK STARTS HERE
-            #self.logs.append(f"STARTED | Task {task.task_id}| {task.task_name} | {time.time()}")
-
             # Perform a step of the task and get the future it awaits on
-            #self.logs.append(f"Worker {self._id} | start step | {task.task_name} | {task.breadcrumbs} | {time.time()}")
+            self.log_start(task)
             future = task.step(self._get_desired_result(task))
-            #self.logs.append(f"Worker {self._id} | Finish | Task {task.task_id} | {task.task_name} | {time.time()}")
 
             self._process_await(task, future)
 
@@ -496,6 +498,7 @@ class Worker:
         # Let the mailbox know this task is waiting
         box.dest_addr = task.return_address
         task.desired_box_id = future.mailbox_id
+        self.log_pause(self._active_task)
 
         # if future._next_flag:
         #     # Set from Worker.next, implies the task wants the next result
@@ -670,7 +673,6 @@ class Worker:
         # Create the tasks
         breadcrumbs = self._active_task.breadcrumbs
         breadcrumbs += (self._active_task.return_address,)
-        #TODO: TASKS ARE CREATED
 
         tasks = []
         for i, fnarg in enumerate(fnargs) :
@@ -685,7 +687,6 @@ class Worker:
                 {**self._active_task.log_context, **log_context[i]},
             )
             tasks.append(task)
-            self.log_create(task)
 
         # Submit the tasks
         self._conn.send((RuntimeMessage.SUBMIT_BATCH, tasks))
