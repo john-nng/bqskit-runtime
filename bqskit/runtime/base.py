@@ -33,6 +33,7 @@ from bqskit.runtime.message import RuntimeMessage
 from bqskit.runtime.result import RuntimeResult
 from bqskit.runtime.task import RuntimeTask
 from bqskit.runtime.worker import start_worker
+from bqskit.runtime.worker import _get_parent_task
 
 
 _logger = logging.getLogger(__name__)
@@ -634,7 +635,7 @@ class ServerBase:
 
             self.outgoing.put((e.conn, RuntimeMessage.SUBMIT_BATCH, assignment))
             # Log task creation to a file
-            [self.log_file.write(f"Worker {e.id} | Create | Task {task[1].task_id} | {task[1]._name} | Address {task[1].return_address} | Parent Task | {time.time()} \n") for task in enumerate(assignment)]
+            [self.log_file.write(f"Worker {e.id} | Create | Task {task[1].task_id} | {task[1]._name} | Address {task[1].return_address} | Parent Task {_get_parent_task(task[1])} | {time.time()} \n") for task in enumerate(assignment)]
 
             e.num_tasks += num_tasks
             e.num_idle_workers -= min(num_tasks, e.num_idle_workers)

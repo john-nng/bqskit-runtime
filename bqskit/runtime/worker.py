@@ -378,21 +378,15 @@ class Worker:
             t for t in self._delayed_tasks
             if not t.is_descendant_of(addr)
         ]
-
-    def _get_parent_task(self, task: RuntimeTask) -> str | None:
-        try:
-            parent_address = task.breadcrumbs[-1]
-        except IndexError:
-                parent_address = None
-        return parent_address
+    
     def log_create(self, task: RuntimeTask) -> None:
-        self.logs.append(f"Worker {self._id} | Create Sub | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
+        self.logs.append(f"Worker {self._id} | Create Sub | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {_get_parent_task(task)} | {time.time()}")
 
     def log_start(self, task: RuntimeTask) -> None:
-        self.logs.append(f"Worker {self._id} | Start | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
+        self.logs.append(f"Worker {self._id} | Start | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {_get_parent_task(task)} | {time.time()}")
 
     def log_finish(self, task: RuntimeTask) -> None:
-        self.logs.append(f"Worker {self._id} | Finish | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {self._get_parent_task(task)} | {time.time()}")
+        self.logs.append(f"Worker {self._id} | Finish | Task {task.task_id} | {task._name} | Address {task.return_address} | Parent Task {_get_parent_task(task)} | {time.time()}")
 
     def _get_next_ready_task(self) -> RuntimeTask | None:
         """Return the next ready task if one exists, otherwise block."""
@@ -925,3 +919,10 @@ def start_worker_rank() -> None:
     # Join them
     for proc in procs:
         proc.join()
+
+def _get_parent_task(task: RuntimeTask) -> str | None:
+    try:
+        parent_address = task.breadcrumbs[-1]
+    except IndexError:
+            parent_address = None
+    return parent_address
