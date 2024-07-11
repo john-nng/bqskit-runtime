@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 import time
+from timeit import default_timer as timer
 import traceback
 from dataclasses import dataclass
 from multiprocessing import Process
@@ -380,19 +381,19 @@ class Worker:
         ]
     
     def log_create(self, task: RuntimeTask) -> None:
-        self.logs.append(f"{time.time()} | W{self._id} | C | {task.return_address} | {task._name} | {_get_parent_task(task)}")
+        self.logs.append(f"{timer()} | W{self._id} | C | {task.return_address} | {task._name} | {_get_parent_task(task)}")
 
     def log_start(self, task: RuntimeTask) -> None:
-        self.logs.append(f"{time.time()} | W{self._id} | S | {task.return_address} | {task._name} | {_get_parent_task(task)}")
+        self.logs.append(f"{timer()} | W{self._id} | S | {task.return_address} | {task._name} | {_get_parent_task(task)}")
 
     def log_finish(self, task: RuntimeTask) -> None:
-        self.logs.append(f"{time.time()} | W{self._id} | F | {task.return_address} | {task._name} | {_get_parent_task(task)}")
+        self.logs.append(f"{timer()} | W{self._id} | F | {task.return_address} | {task._name} | {_get_parent_task(task)}")
     
     def log_pause(self, task: RuntimeTask) -> None:
-        self.logs.append(f"{time.time()} | W{self._id} | P | {task.return_address} | {task._name} | {_get_parent_task(task)}")
+        self.logs.append(f"{timer()} | W{self._id} | P | {task.return_address} | {task._name} | {_get_parent_task(task)}")
     
     def log_resume(self, task: RuntimeTask) -> None:
-        self.logs.append(f"{time.time()} | W{self._id} | R | {task.return_address} | {task._name} | {_get_parent_task(task)}")
+        self.logs.append(f"{timer()} | W{self._id} | R | {task.return_address} | {task._name} | {_get_parent_task(task)}")
 
     def _get_next_ready_task(self) -> RuntimeTask | None:
         """Return the next ready task if one exists, otherwise block."""
@@ -607,9 +608,8 @@ class Worker:
             task_name,
             {**self._active_task.log_context, **log_context},
         )
-        #TODO: TASK IS CREATED
-        self.logs.append(f"Task {task.task_id}, Name: {task.task_name} Created | {time.time()}")
-
+        # Log task creation to a file
+        self.log_create(task)
         # Submit the task (on the next cycle)
         self._conn.send((RuntimeMessage.SUBMIT, task))
 
@@ -687,6 +687,8 @@ class Worker:
                 {**self._active_task.log_context, **log_context[i]},
             )
             tasks.append(task)
+            # Log task creation to a file
+            self.log_create(task)            
 
         # Submit the tasks
         self._conn.send((RuntimeMessage.SUBMIT_BATCH, tasks))

@@ -634,9 +634,6 @@ class ServerBase:
                 continue
 
             self.outgoing.put((e.conn, RuntimeMessage.SUBMIT_BATCH, assignment))
-            # Log task creation to a file
-            [self.log_file.write(f"{time.time()} | W{e.id} | C | {task[1].return_address} | {task[1]._name} | {_get_parent_task(task[1])}\n") 
-             for task in enumerate(assignment)]
 
             e.num_tasks += num_tasks
             e.num_idle_workers -= min(num_tasks, e.num_idle_workers)

@@ -6,6 +6,7 @@ import logging
 import selectors
 import socket
 import time
+from timeit import default_timer as timer
 import uuid
 from dataclasses import dataclass
 from logging import LogRecord
@@ -280,6 +281,8 @@ class DetachedServer(ServerBase):
             task.logging_level,
             task.max_logging_depth,
         )
+        # Log task creation to a file
+        self.log_file.write(f"{timer()} | W-1 | C | {internal_task.return_address} | {internal_task._name} | None\n")
 
         self.schedule_tasks([internal_task])
 
