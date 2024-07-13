@@ -142,7 +142,7 @@ def repartition_logs(file_name):
         elif command == 'F' and task_paused[f"{task_id}:{task_pause_count[task_id]-1}"]:
             prev_task_id = f"{task_id}:{task_pause_count[task_id]-1}"
             print(task_hierarchy[prev_task_id])
-            new_finish_line = f"{time} | {worker_id} | FC | {f"{task_id}:{task_pause_count[task_id]}"} | {description} | {task_hierarchy[prev_task_id]}"
+            new_finish_line = f"{time} | {worker_id} | F | {f"{task_id}:{task_pause_count[task_id]}"} | {description} | {task_hierarchy[prev_task_id]}"
             new_log_lines.append(new_finish_line)
             #if task_id in children_tasks_copy:
             #    children_tasks_copy.pop(task_id)
