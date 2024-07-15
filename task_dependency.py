@@ -16,7 +16,7 @@ class TaskNode:
         action: str, 
         start_time: float = None, 
         duration: float = None, 
-        parent: 'TaskNode' = None
+        parents: list[str] = []
     ) -> None:
         """Create the TaskNode Object with task address, worker id, parent address, along with a created timestamp."""
         self.worker = worker
@@ -27,18 +27,17 @@ class TaskNode:
         """Unique identifier of Task in the form of a RuntimeAddress"""
         self.action = action
         """Type of Task ex: instansiate, sub_do_work"""
-        self.start_time = 0
+        self.start_time = start_time
         """Time of task starting. Initially 0 until found Start timestamp in logs."""
         self.started = False
         self.duration = 0
         """Time duration from time of start to time of finish. Initially 0 until found Finish timestamp in logs."""
-        self.parent = parent
+        self.parents = parents
         """Identifier for direct parent object."""
 
     def __str__(self):
         # Optional Parent field
-        parent_info = f"{self.parent}" if self.parent else "None"
-        return (f"{self.address} | {self.action} | {self.worker} | Created: {self.created_time} | Started: {self.start_time} | Duration: {self.duration}\nParent: {parent_info}\n")
+        return (f"{self.address} | {self.action} | {self.worker} | Created: {self.created_time} | Started: {self.start_time} | Duration: {self.duration}\nParent: {self.parents}\n")
     
     def __repr__(self):
         return self.__str__()
@@ -63,7 +62,7 @@ def line_to_task(line: str, tasks: dict) -> None:
     columns = [col.strip() for col in line.split("|")]
     status = columns[2]
     address = columns[3]
-    parent = tasks.get("Task "+columns[5]) if columns[5] != "None" else "None"
+    parents = parse_parents(columns[5]) if columns[5] != "None" else []
     key = ("Task " +address)
 
     # Creation call is found - create a new task
@@ -71,7 +70,13 @@ def line_to_task(line: str, tasks: dict) -> None:
         created_time = float(columns[0])
         worker = columns[1]
         action = columns[4]
-        tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parent=parent)
+        if len(parents) > 1:
+            # this is a synchronus type task - when created consider it started too
+            start_time = created_time
+            tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents)
+        else:
+            tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents)
+
     # Start call is found - update object's start_time field
     elif status == "S":
         # Existing Task - grab from tasks dict
@@ -89,18 +94,37 @@ def line_to_task(line: str, tasks: dict) -> None:
     else:
         ValueError("Could not read line properly")
         return None
+    
+def parse_parents(address_str):
+    """
+    Parses the address column from the log line.
+    
+    Parameters:
+    address_str (str): The last column of the log line containing address(es).
+    
+    Returns:
+    list: A list of address strings.
+    """
+    # Check if the address string starts with '[' and ends with ']'
+    if address_str.startswith('[') and address_str.endswith(']'):
+        # Remove the brackets and split the string by ', ' to get individual addresses
+        addresses = address_str[1:-1].split(', ')
+        return [address.strip("'") for address in addresses]
+    else:
+        # If there's no brackets, return the address string in a list
+        return [address_str]
 
-def process_logs(args):
+def write_sort_logs(args):
     """"Read file -> Sort on global time -> Make times relative -> Write back file"""
     file_name = args
-    out_file_log = f"logs/{file_name[:file_name.find(".")]}_processed.txt"
+    out_file_log = f"logs/{file_name[:file_name.find(".")]}_sorted.txt"
     # Read the file content
     with open(f"logs/{file_name}", "r") as file:
         lines = file.readlines()
 
     sorted_logs = sort_logs(lines)
 
-    # Write back processed file
+    # Write back sorted file
     with open(out_file_log, 'w') as file:
         for entry in sorted_logs:
             file.write(' | '.join(entry) + '\n')
@@ -134,6 +158,14 @@ def repartition_logs(file_name):
             
         # Resume
         elif command == 'S' and task_paused[new_task_id]:
+            for parent in task_hierarchy[new_task_id]:
+                # get first 3 numbers in address - which is the base task id
+                base_task_id = ":".join(parent.split(":")[:3])
+                # check for the latest sequence for the base task and update the parent address
+                updated_parent_task_id = f"{base_task_id}:{task_pause_count[base_task_id]}"
+                index = task_hierarchy[new_task_id].index(parent)
+                task_hierarchy[new_task_id][index] = updated_parent_task_id
+
             task_pause_count[task_id] += 1
             new_line = f"{time} | {worker_id} | C | {f"{task_id}:{task_pause_count[task_id]}"} | {description} | {task_hierarchy[new_task_id]}"
             new_log_lines.append(new_line)
@@ -141,7 +173,6 @@ def repartition_logs(file_name):
 
         elif command == 'F' and task_paused[f"{task_id}:{task_pause_count[task_id]-1}"]:
             prev_task_id = f"{task_id}:{task_pause_count[task_id]-1}"
-            print(task_hierarchy[prev_task_id])
             new_finish_line = f"{time} | {worker_id} | F | {f"{task_id}:{task_pause_count[task_id]}"} | {description} | {task_hierarchy[prev_task_id]}"
             new_log_lines.append(new_finish_line)
             #if task_id in children_tasks_copy:
@@ -204,21 +235,15 @@ def plot_graph(file_name:str, tasks:dict[str, TaskNode]) -> None:
 
     # Add nodes and edges from TaskNode objects
     for key, task in tasks.items():
-        G.add_node(task.address, label=f"{task.action}\n{task.worker}")
-        if task.parent != "None":
-            G.add_edge(task.parent.address, task.address)
+        G.add_node(task.address, label=f"{task.address}\n{task.worker}")
+        for parent_addr in task.parents:
+            G.add_edge(parent_addr, task.address)
+        #if not task.parent or task.parent != "None":
+        #    G.add_edge(task.parent.address, task.address)
 
     # Create positions for the nodes based on their start_time and spread out y positions
-    #y_spacing = 5  # Adjust this value to spread nodes further apart vertically
-    #pos = {task.address: (task.start_time, i * y_spacing) for i, (key, task) in enumerate(tasks.items())}
-
-    # Identify root nodes (nodes with no incoming edges)
-    root_nodes = [node for node in G.nodes if G.in_degree(node) == 0]
-
-    # Create positions for the nodes based on their start_time and a hierarchical layout
-    pos = {}
-    for root in root_nodes:
-        pos.update(hierarchical_pos(G, root, width=3., vert_gap=0.1))
+    y_spacing = 5  # Adjust this value to spread nodes further apart vertically
+    pos = {task.address: (task.start_time, i * y_spacing) for i, (key, task) in enumerate(tasks.items())}
 
 
     # Draw the graph
@@ -229,25 +254,29 @@ def plot_graph(file_name:str, tasks:dict[str, TaskNode]) -> None:
     plt.xlabel('Start Time')
 
     # Save the plot to a file
-    workflow_name = f"{file_name[file_name.find("logs")+5:file_name.find("_processed")]}"
+    workflow_name = f"{file_name[file_name.find("logs")+5:file_name.find("_partitioned")]}"
     output_filepath = f"charts/{workflow_name}_dependency_graph.png"
     plt.savefig(output_filepath, format='png')
 
     plt.close()  # Close the plot to free up resources
 
-def write_repartitioned_log(file_name, output_file_name):
+def write_repartitioned_log(file_name):
     parsed_log = repartition_logs(file_name)
-    with open(output_file_name, 'w') as file:
+    workflow_name = f"{file_name[file_name.find("logs")+5:file_name.find("_sorted")]}"
+    out_file = f"logs/{workflow_name}_partitioned.txt"
+    with open(out_file, 'w') as file:
         for line in parsed_log:
             file.write(line + '\n')
+    return out_file
 
 if __name__ == '__main__':
     file_name = sys.argv[1]
     
-    processed_file = process_logs(file_name)
-    write_repartitioned_log(processed_file, "logs/qsearch_3_4_partitioned.txt")
+    sorted_file = write_sort_logs(file_name)
+    partitioned_logs = write_repartitioned_log(sorted_file)
 
-    #tasks = parse_lines(processed_file)
+    tasks = parse_lines(partitioned_logs)
+    print(max([task.duration for task in tasks.values()]))
     
-    #plot_graph(processed_file, tasks)
+    plot_graph(partitioned_logs, tasks)
 
