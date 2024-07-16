@@ -117,7 +117,7 @@ def parse_parents(address_str):
 def write_sort_logs(args):
     """"Read file -> Sort on global time -> Make times relative -> Write back file"""
     file_name = args
-    out_file_log = f"logs/{file_name[:file_name.find(".")]}_sorted.txt"
+    out_file_log = f"logs/{file_name[:file_name.find('.')]}_sorted.txt"
     # Read the file content
     with open(f"logs/{file_name}", "r") as file:
         lines = file.readlines()
@@ -167,13 +167,16 @@ def repartition_logs(file_name):
                 task_hierarchy[new_task_id][index] = updated_parent_task_id
 
             task_pause_count[task_id] += 1
-            new_line = f"{time} | {worker_id} | C | {f"{task_id}:{task_pause_count[task_id]}"} | {description} | {task_hierarchy[new_task_id]}"
+            task_id_info = f"{task_id}:{task_pause_count[task_id]}"
+            new_line = f"{time} | {worker_id} | C | {task_id_info} | {description} | {task_hierarchy[new_task_id]}"
+            #new_line = f"{time} | {worker_id} | C | {f"{task_id}:{task_pause_count[task_id]}"} | {description} | {task_hierarchy[new_task_id]}"
             new_log_lines.append(new_line)
             #task_paused[new_task_id] = False
 
         elif command == 'F' and task_paused[f"{task_id}:{task_pause_count[task_id]-1}"]:
             prev_task_id = f"{task_id}:{task_pause_count[task_id]-1}"
-            new_finish_line = f"{time} | {worker_id} | F | {f"{task_id}:{task_pause_count[task_id]}"} | {description} | {task_hierarchy[prev_task_id]}"
+            task_id_info = f"{task_id}:{task_pause_count[task_id]}"
+            new_finish_line = f"{time} | {worker_id} | F | {task_id_info} | {description} | {task_hierarchy[prev_task_id]}"
             new_log_lines.append(new_finish_line)
             #if task_id in children_tasks_copy:
             #    children_tasks_copy.pop(task_id)
@@ -254,7 +257,7 @@ def plot_graph(file_name:str, tasks:dict[str, TaskNode]) -> None:
     plt.xlabel('Start Time')
 
     # Save the plot to a file
-    workflow_name = f"{file_name[file_name.find("logs")+5:file_name.find("_partitioned")]}"
+    workflow_name = f"{file_name[file_name.find('logs')+5:file_name.find('_partitioned')]}"
     output_filepath = f"charts/{workflow_name}_dependency_graph.png"
     plt.savefig(output_filepath, format='png')
 
@@ -262,7 +265,7 @@ def plot_graph(file_name:str, tasks:dict[str, TaskNode]) -> None:
 
 def write_repartitioned_log(file_name):
     parsed_log = repartition_logs(file_name)
-    workflow_name = f"{file_name[file_name.find("logs")+5:file_name.find("_sorted")]}"
+    workflow_name = f"{file_name[file_name.find('logs')+5:file_name.find('_sorted')]}"
     out_file = f"logs/{workflow_name}_partitioned.txt"
     with open(out_file, 'w') as file:
         for line in parsed_log:
@@ -276,7 +279,6 @@ if __name__ == '__main__':
     partitioned_logs = write_repartitioned_log(sorted_file)
 
     tasks = parse_lines(partitioned_logs)
-    print(max([task.duration for task in tasks.values()]))
     
     plot_graph(partitioned_logs, tasks)
 
