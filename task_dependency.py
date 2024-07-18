@@ -4,11 +4,22 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from collections import defaultdict
+from typing import Callable
+from task_scheduling import algorithms
+from task_scheduling.tasks import Base, Generic, PiecewiseLinear, Linear, LinearDrop, Exponential
+from task_scheduling.util import (
+    check_schedule,
+    evaluate_schedule,
+    plot_schedule,
+    plot_task_losses,
+    summarize_tasks,
+)
+
 import os
 import copy
 
-class TaskNode:
-    """Representation of a Task"""
+class TaskNode(Generic):
+    """Representation of a Task, compatible with Base task objects from task_scheduling"""
     def __init__(self, 
         created_time: float, 
         worker: str, 
@@ -16,7 +27,8 @@ class TaskNode:
         action: str, 
         start_time: float = None, 
         duration: float = None, 
-        parents: list[str] = []
+        parents: list[str] = [],
+        loss_func: Callable[[float], float] = lambda t: 0,
     ) -> None:
         """Create the TaskNode Object with task address, worker id, parent address, along with a created timestamp."""
         self.worker = worker
@@ -30,10 +42,15 @@ class TaskNode:
         self.start_time = start_time
         """Time of task starting. Initially 0 until found Start timestamp in logs."""
         self.started = False
-        self.duration = 0
+        self.duration = 0.0
         """Time duration from time of start to time of finish. Initially 0 until found Finish timestamp in logs."""
         self.parents = parents
         """Identifier for direct parent object."""
+        # Task Scheduling Compatibility
+        self.t_release = created_time
+        """Earliest time a task can be started."""
+        # Initialize Generic task
+        super().__init__(duration=self.duration, t_release=self.t_release, loss_func=loss_func, name=self.address)
 
     def __str__(self):
         # Optional Parent field
@@ -41,6 +58,10 @@ class TaskNode:
     
     def __repr__(self):
         return self.__str__()
+    
+    def __call__(self, t):
+        """Loss function versus time."""
+        return self.loss_func(t)
 
     
 def parse_lines(file_path) -> dict:
@@ -70,12 +91,13 @@ def line_to_task(line: str, tasks: dict) -> None:
         created_time = float(columns[0])
         worker = columns[1]
         action = columns[4]
+        
         if len(parents) > 1:
             # this is a synchronus type task - when created consider it started too
             start_time = created_time
-            tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents)
+            tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents, loss_func=Linear)
         else:
-            tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents)
+            tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents, loss_func=Linear)
 
     # Start call is found - update object's start_time field
     elif status == "S":
@@ -89,7 +111,10 @@ def line_to_task(line: str, tasks: dict) -> None:
     elif status == "F":
         # Existing Task - grab from tasks dict
         finish_time = float(columns[0])
-        tasks[key].duration = finish_time - tasks[key].start_time 
+        tasks[key].duration = finish_time - tasks[key].start_time
+        # Create Loss Function for Task
+        linear_loss_func = Linear(duration=tasks[key].duration, t_release=tasks[key].created_time, slope=1.0)
+        tasks[key].loss_func = linear_loss_func
     
     else:
         ValueError("Could not read line properly")
@@ -272,13 +297,49 @@ def write_repartitioned_log(file_name):
             file.write(line + '\n')
     return out_file
 
+def get_num_workers(file_name):
+    # Split the string based on non-numeric characters
+    parts = ''.join(c if c.isdigit() else ' ' for c in file_name).split()
+    
+    # Filter out the numeric parts
+    numbers = [int(part) for part in parts if part.isdigit()]
+    
+    # Return the last number
+    if numbers:
+        return numbers[-1]
+    else:
+        return None  # Return None if no number is found
+
 if __name__ == '__main__':
     file_name = sys.argv[1]
+    workflow_name = f"{file_name[:file_name.find('.txt')]}"
+    num_workers = get_num_workers(file_name)
     
     sorted_file = write_sort_logs(file_name)
     partitioned_logs = write_repartitioned_log(sorted_file)
 
     tasks = parse_lines(partitioned_logs)
+    task_objs = tasks.values()
+    #print(tasks)
+    print(f"Unoptimized total time: {list(task_objs)[-1].start_time + list(task_objs)[-1].duration}")
     
     plot_graph(partitioned_logs, tasks)
+
+    # Optimize Task Scheduling
+    ch_avail = [0] * num_workers
+
+    algorithms = dict(
+        Earliest_Release_Time=algorithms.earliest_release,
+        Random=algorithms.random_sequencer,
+        #Monte_carlo=algorithms.mcts,
+    )
+
+    for alg_name, algorithm in algorithms.items():
+        schedule = algorithm(task_objs, ch_avail)
+
+        #check_schedule(tasks, schedule)
+        loss = evaluate_schedule(task_objs, schedule)
+        name = f"{workflow_name}_{alg_name}_optimize"
+        plot_schedule(task_objs, schedule, loss=loss, name=name, ax_kwargs={'xlabel': 'Time', 'ylabel': 'Workers'})
+        plt.savefig(f"charts/{name}.png")
 
