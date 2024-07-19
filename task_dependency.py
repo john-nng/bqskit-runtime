@@ -25,7 +25,8 @@ class TaskNode(Generic):
         worker: str, 
         address: str, 
         action: str, 
-        start_time: float = None, 
+        start_time: float = None,
+        t_release: float = None,
         duration: float = None, 
         parents: list[str] = [],
         loss_func: Callable[[float], float] = lambda t: 0,
@@ -47,14 +48,14 @@ class TaskNode(Generic):
         self.parents = parents
         """Identifier for direct parent object."""
         # Task Scheduling Compatibility
-        self.t_release = created_time
+        self.t_release = t_release
         """Earliest time a task can be started."""
         # Initialize Generic task
         super().__init__(duration=self.duration, t_release=self.t_release, loss_func=loss_func, name=self.address)
 
     def __str__(self):
         # Optional Parent field
-        return (f"{self.address} | {self.action} | {self.worker} | Created: {self.created_time} | Started: {self.start_time} | Duration: {self.duration}\nParent: {self.parents}\n")
+        return (f"{self.address} | {self.action} | {self.worker} | Created: {self.created_time} | T_release: {self.t_release} | Started: {self.start_time} | Duration: {self.duration}\nParent: {self.parents}\n")
     
     def __repr__(self):
         return self.__str__()
@@ -84,7 +85,7 @@ def line_to_task(line: str, tasks: dict) -> None:
     status = columns[2]
     address = columns[3]
     parents = parse_parents(columns[5]) if columns[5] != "None" else []
-    key = ("Task " +address)
+    key = (address)
 
     # Creation call is found - create a new task
     if status == "C":
@@ -95,9 +96,10 @@ def line_to_task(line: str, tasks: dict) -> None:
         if len(parents) > 1:
             # this is a synchronus type task - when created consider it started too
             start_time = created_time
-            tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents, loss_func=Linear)
+            t_release = latest_parent_finish(parents, tasks)
+            tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents, t_release=t_release, loss_func=Linear)
         else:
-            tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents, loss_func=Linear)
+            tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents, t_release=created_time, loss_func=Linear)
 
     # Start call is found - update object's start_time field
     elif status == "S":
@@ -138,6 +140,14 @@ def parse_parents(address_str):
     else:
         # If there's no brackets, return the address string in a list
         return [address_str]
+    
+def latest_parent_finish(parents, tasks):
+    task_objects = [tasks[parent_addr] for parent_addr in parents]
+    finish_times = []
+    for t in task_objects:
+        finish_times.append(t.start_time + t.duration)
+    latest_time = max(finish_times)
+    return latest_time
 
 def write_sort_logs(args):
     """"Read file -> Sort on global time -> Make times relative -> Write back file"""
@@ -309,6 +319,25 @@ def get_num_workers(file_name):
         return numbers[-1]
     else:
         return None  # Return None if no number is found
+    
+def find_total_time(tasks, schedule):
+    """
+    Calculate the time when the last task finishes.
+
+    Parameters
+    ----------
+    tasks : Collection of task_scheduling.tasks.Base
+        Tasks.
+    schedule : numpy.ndarray
+        Task execution schedule.
+
+    Returns
+    -------
+    float
+        The finish time of the last task.
+    """
+    finish_times = [schedule['t'][i] + task.duration for i, task in enumerate(tasks)]
+    return max(finish_times)
 
 if __name__ == '__main__':
     file_name = sys.argv[1]
@@ -319,7 +348,7 @@ if __name__ == '__main__':
     partitioned_logs = write_repartitioned_log(sorted_file)
 
     tasks = parse_lines(partitioned_logs)
-    task_objs = tasks.values()
+    task_objs = list(tasks.values())
     #print(tasks)
     print(f"Unoptimized total time: {list(task_objs)[-1].start_time + list(task_objs)[-1].duration}")
     
@@ -337,9 +366,15 @@ if __name__ == '__main__':
     for alg_name, algorithm in algorithms.items():
         schedule = algorithm(task_objs, ch_avail)
 
-        #check_schedule(tasks, schedule)
+        check_schedule(task_objs, schedule)
         loss = evaluate_schedule(task_objs, schedule)
         name = f"{workflow_name}_{alg_name}_optimize"
         plot_schedule(task_objs, schedule, loss=loss, name=name, ax_kwargs={'xlabel': 'Time', 'ylabel': 'Workers'})
         plt.savefig(f"charts/{name}.png")
+
+        print(f"{name} total time: {find_total_time(task_objs, schedule=schedule)}")
+        print(tasks['-1:0:0:0'])
+        print(schedule['t'][0])
+
+        
 
