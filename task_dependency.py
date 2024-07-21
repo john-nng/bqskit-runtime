@@ -3,66 +3,10 @@ import sys
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from task_node import TaskNode
+from scheduling import Scheduler
+from scheduling import PlotSchedule
 from collections import defaultdict
-from typing import Callable
-from task_scheduling import algorithms
-from task_scheduling.tasks import Base, Generic, PiecewiseLinear, Linear, LinearDrop, Exponential
-from task_scheduling.util import (
-    check_schedule,
-    evaluate_schedule,
-    plot_schedule,
-    plot_task_losses,
-    summarize_tasks,
-)
-
-import os
-import copy
-
-class TaskNode(Generic):
-    """Representation of a Task, compatible with Base task objects from task_scheduling"""
-    def __init__(self, 
-        created_time: float, 
-        worker: str, 
-        address: str, 
-        action: str, 
-        start_time: float = None,
-        t_release: float = None,
-        duration: float = None, 
-        parents: list[str] = [],
-        loss_func: Callable[[float], float] = lambda t: 0,
-    ) -> None:
-        """Create the TaskNode Object with task address, worker id, parent address, along with a created timestamp."""
-        self.worker = worker
-        """Worker who is handling this task."""
-        self.created_time = created_time
-        """Time of task creation."""
-        self.address = address
-        """Unique identifier of Task in the form of a RuntimeAddress"""
-        self.action = action
-        """Type of Task ex: instansiate, sub_do_work"""
-        self.start_time = start_time
-        """Time of task starting. Initially 0 until found Start timestamp in logs."""
-        self.started = False
-        self.duration = 0.0
-        """Time duration from time of start to time of finish. Initially 0 until found Finish timestamp in logs."""
-        self.parents = parents
-        """Identifier for direct parent object."""
-        # Task Scheduling Compatibility
-        self.t_release = t_release
-        """Earliest time a task can be started."""
-        # Initialize Generic task
-        super().__init__(duration=self.duration, t_release=self.t_release, loss_func=loss_func, name=self.address)
-
-    def __str__(self):
-        # Optional Parent field
-        return (f"{self.address} | {self.action} | {self.worker} | Created: {self.created_time} | T_release: {self.t_release} | Started: {self.start_time} | Duration: {self.duration}\nParent: {self.parents}\n")
-    
-    def __repr__(self):
-        return self.__str__()
-    
-    def __call__(self, t):
-        """Loss function versus time."""
-        return self.loss_func(t)
 
     
 def parse_lines(file_path) -> dict:
@@ -97,9 +41,9 @@ def line_to_task(line: str, tasks: dict) -> None:
             # this is a synchronus type task - when created consider it started too
             start_time = created_time
             t_release = latest_parent_finish(parents, tasks)
-            tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents, t_release=t_release, loss_func=Linear)
+            tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents)
         else:
-            tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents, t_release=created_time, loss_func=Linear)
+            tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents)
 
     # Start call is found - update object's start_time field
     elif status == "S":
@@ -114,9 +58,6 @@ def line_to_task(line: str, tasks: dict) -> None:
         # Existing Task - grab from tasks dict
         finish_time = float(columns[0])
         tasks[key].duration = finish_time - tasks[key].start_time
-        # Create Loss Function for Task
-        linear_loss_func = Linear(duration=tasks[key].duration, t_release=tasks[key].created_time, slope=1.0)
-        tasks[key].loss_func = linear_loss_func
     
     else:
         ValueError("Could not read line properly")
@@ -339,6 +280,7 @@ def find_total_time(tasks, schedule):
     finish_times = [schedule['t'][i] + task.duration for i, task in enumerate(tasks)]
     return max(finish_times)
 
+
 if __name__ == '__main__':
     file_name = sys.argv[1]
     workflow_name = f"{file_name[:file_name.find('.txt')]}"
@@ -348,33 +290,16 @@ if __name__ == '__main__':
     partitioned_logs = write_repartitioned_log(sorted_file)
 
     tasks = parse_lines(partitioned_logs)
+    tasks1 = parse_lines(partitioned_logs)
     task_objs = list(tasks.values())
-    #print(tasks)
+    
     print(f"Unoptimized total time: {list(task_objs)[-1].start_time + list(task_objs)[-1].duration}")
     
     plot_graph(partitioned_logs, tasks)
 
-    # Optimize Task Scheduling
-    ch_avail = [0] * num_workers
-
-    algorithms = dict(
-        Earliest_Release_Time=algorithms.earliest_release,
-        Random=algorithms.random_sequencer,
-        #Monte_carlo=algorithms.mcts,
-    )
-
-    for alg_name, algorithm in algorithms.items():
-        schedule = algorithm(task_objs, ch_avail)
-
-        check_schedule(task_objs, schedule)
-        loss = evaluate_schedule(task_objs, schedule)
-        name = f"{workflow_name}_{alg_name}_optimize"
-        plot_schedule(task_objs, schedule, loss=loss, name=name, ax_kwargs={'xlabel': 'Time', 'ylabel': 'Workers'})
-        plt.savefig(f"charts/{name}.png")
-
-        print(f"{name} total time: {find_total_time(task_objs, schedule=schedule)}")
-        print(tasks['-1:0:0:0'])
-        print(schedule['t'][0])
-
-        
-
+    S = Scheduler(name=f"{workflow_name}_optimized", tasks=tasks1, num_workers=num_workers)
+    optimized_schedule = S.Schedule()
+    # Optimized
+    PlotSchedule(optimized_schedule, num_workers=S.num_workers, filename=S.name)
+    # Unoptimized
+    PlotSchedule(tasks, num_workers=num_workers, filename=workflow_name)

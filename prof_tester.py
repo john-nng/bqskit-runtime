@@ -6,9 +6,10 @@ from bqskit.passes import *
 from bqskit.compiler import Compiler
 import sys
 import time
+from timeit import default_timer as timer
 
 # Construct the unitary as an NumPy array
-circ = Circuit.from_file("test.qasm")
+circ = Circuit.from_file("hubbard_4.qasm")
 circ.remove_all_measurements()
 
 print(circ.gate_counts)
@@ -24,7 +25,7 @@ num_workers = int(sys.argv[3])
 
 compiler = Compiler(num_workers=num_workers, log_file=f"logs/{task}_{block_size}_{num_workers}.txt")
 
-start_time = time.time()
+start_time = timer()
 
 # synthesized_circuit = compile(circ, max_synthesis_size=3, optimization_level=3, compiler=compiler)
 if task == "leap":
@@ -63,4 +64,4 @@ elif task == "pas":
 synthesized_circuit = compiler.compile(circ, workflow=workflow)
 
 print(synthesized_circuit.gate_counts)
-print("Total Time:", time.time() - start_time)
+print("Total Time:", timer() - start_time)
