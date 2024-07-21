@@ -20,7 +20,7 @@ class Scheduler():
         worker_end_times = [0] * self.num_workers # Track when each worker is free
         #TODO latency not working as intended
         comm_latency = 0.01 # account for the time it takes to send a recive messages for a task to start after its been created
-
+        #TODO make base task start and end in same workers
         for t in sorted_tasks:
             task = self.tasks[t.address]
             earliest_start_time = max([self.tasks[parent].created_time + self.tasks[parent].duration for parent in task.parents], default=0)
