@@ -29,7 +29,7 @@ def line_to_task(line: str, tasks: dict) -> None:
     status = columns[2]
     address = columns[3]
     parents = parse_parents(columns[5]) if columns[5] != "None" else []
-    key = (address)
+    key = address
 
     # Creation call is found - create a new task
     if status == "C":
@@ -47,6 +47,9 @@ def line_to_task(line: str, tasks: dict) -> None:
 
     # Start call is found - update object's start_time field
     elif status == "S":
+        if key == '-1:0:0:0': # correct the worker for the base task start by server (-1 -> this line's worker)
+            worker = columns[1]
+            tasks[key].worker = worker
         # Existing Task - grab from tasks dict
         # May see S again before a F, if already started then dont set start time again
         start_time = float(columns[0])       
@@ -154,8 +157,6 @@ def repartition_logs(file_name):
             task_id_info = f"{task_id}:{task_pause_count[task_id]}"
             new_finish_line = f"{time} | {worker_id} | F | {task_id_info} | {description} | {task_hierarchy[prev_task_id]}"
             new_log_lines.append(new_finish_line)
-            #if task_id in children_tasks_copy:
-            #    children_tasks_copy.pop(task_id)
             
         else:
             new_line = f"{time} | {worker_id} | {command} | {new_task_id} | {description} | {new_parent_id}"
@@ -261,24 +262,10 @@ def get_num_workers(file_name):
     else:
         return None  # Return None if no number is found
     
-def find_total_time(tasks, schedule):
-    """
-    Calculate the time when the last task finishes.
-
-    Parameters
-    ----------
-    tasks : Collection of task_scheduling.tasks.Base
-        Tasks.
-    schedule : numpy.ndarray
-        Task execution schedule.
-
-    Returns
-    -------
-    float
-        The finish time of the last task.
-    """
-    finish_times = [schedule['t'][i] + task.duration for i, task in enumerate(tasks)]
-    return max(finish_times)
+def truncate_float(number, decimals=2):
+    multiplier = 10 ** decimals
+    truncated_number = int(number * multiplier) / multiplier
+    return truncated_number
 
 
 if __name__ == '__main__':
@@ -291,15 +278,14 @@ if __name__ == '__main__':
 
     tasks = parse_lines(partitioned_logs)
     tasks1 = parse_lines(partitioned_logs)
-    task_objs = list(tasks.values())
-    
-    print(f"Unoptimized total time: {list(task_objs)[-1].start_time + list(task_objs)[-1].duration}")
     
     plot_graph(partitioned_logs, tasks)
 
-    S = Scheduler(name=f"{workflow_name}_optimized", tasks=tasks1, num_workers=num_workers)
-    optimized_schedule = S.Schedule()
-    # Optimized
-    PlotSchedule(optimized_schedule, num_workers=S.num_workers, filename=S.name)
-    # Unoptimized
-    PlotSchedule(tasks, num_workers=num_workers, filename=workflow_name)
+    S = Scheduler(name=f"{workflow_name}_ideal", tasks=tasks1, num_workers=num_workers)
+    ideal_schedule = S.Schedule()
+    
+    regular_time = PlotSchedule(tasks, num_workers=num_workers, filename=workflow_name)
+    ideal_time = PlotSchedule(ideal_schedule, num_workers=S.num_workers, filename=S.name)
+
+    slower_by = ((regular_time - ideal_time) / ideal_time) * 100
+    print(f"{workflow_name} is {truncate_float(slower_by)}% slower than ideal schedule.")
