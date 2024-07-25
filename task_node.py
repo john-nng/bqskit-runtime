@@ -35,7 +35,7 @@ class TaskNode():
 
     def __str__(self):
         # Optional Parent field
-        return (f"{self.address} | {self.action} | {self.worker} | Created: {self.created_time} | Started: {self.start_time} | Duration: {self.duration} Parent: {self.parents}\n")
+        return (f"{self.address} | {self.action} | {self.worker} | Created: {self.created_time} | Started: {self.start_time} | Duration: {self.duration} | Parent: {self.parents}\n")
     
     def __repr__(self):
         return self.__str__()

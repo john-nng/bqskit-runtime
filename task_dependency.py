@@ -39,8 +39,7 @@ def line_to_task(line: str, tasks: dict) -> None:
         
         if len(parents) > 1:
             # this is a synchronus type task - when created consider it started too
-            start_time = created_time
-            t_release = latest_parent_finish(parents, tasks)
+            start_time = float(columns[0])
             tasks[key] = TaskNode(created_time=created_time, start_time=start_time, worker=worker, action=action, address=address, parents=parents)
         else:
             tasks[key] = TaskNode(created_time=created_time, worker=worker, action=action, address=address, parents=parents)
@@ -60,8 +59,14 @@ def line_to_task(line: str, tasks: dict) -> None:
     elif status == "F":
         # Existing Task - grab from tasks dict
         finish_time = float(columns[0])
-        tasks[key].duration = finish_time - tasks[key].start_time
-    
+        if key in tasks:
+            if tasks[key].start_time is not None:
+                tasks[key].duration = finish_time - tasks[key].start_time
+            else:
+                # task has no start_time, it was cancelled - set the start time to created_time
+                tasks[key].start_time = tasks[key].created_time
+        else:
+            print(f"Task {key} not found in tasks")
     else:
         ValueError("Could not read line properly")
         return None
@@ -279,7 +284,7 @@ if __name__ == '__main__':
     tasks = parse_lines(partitioned_logs)
     tasks1 = parse_lines(partitioned_logs)
     
-    plot_graph(partitioned_logs, tasks)
+    #plot_graph(partitioned_logs, tasks)
 
     S = Scheduler(name=f"{workflow_name}_ideal", tasks=tasks1, num_workers=num_workers)
     ideal_schedule = S.Schedule()

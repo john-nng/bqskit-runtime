@@ -97,7 +97,7 @@ def PlotSchedule(tasks: Dict[str, TaskNode], num_workers: int, filename: str, re
             worker = task.worker
 
         
-        color = generate_color(task, color_lookup)
+        color = generate_color(task, tasks, color_lookup)
         
         rect = patches.Rectangle((start, worker), duration, 1, edgecolor=color, facecolor=color, label=task.address)
         ax.add_patch(rect)
@@ -137,7 +137,8 @@ def PlotSchedule(tasks: Dict[str, TaskNode], num_workers: int, filename: str, re
 def find_num_blocks(tasks) -> int:
     max_block = 0
     for task in tasks.values():
-        max_block = max(max_block, get_third_digit(task.address)+1)
+        if task.parents and task.parents[0] == '-1:0:0:0':
+            max_block = max(max_block, get_third_digit(task.address)+1)
     return max_block
 
 def get_address_prefix(address: str) -> str:
@@ -157,6 +158,7 @@ def populate_color_lookup(
     for task in tasks.values():
         key = get_third_digit(task.address)
         base_colors = generate_base_colors(num_blocks)
+        #print(get_third_digit(task.address))
         base_color = base_colors[get_third_digit(task.address) % num_blocks]
         if not task.parents:
             color_table[get_address_prefix(task.address)] = (0,0,0)
@@ -167,6 +169,7 @@ def populate_color_lookup(
 
 def generate_color(
     task: TaskNode,
+    tasks: Dict[str, TaskNode],
     color_table: dict, 
     ) -> Tuple[float, float, float]:
 
@@ -180,7 +183,11 @@ def generate_color(
     elif len(task.parents) > 1:
         return color_table[get_address_prefix(task.address)]
     else :
-        return adjust_brightness(color_table[parent_prefix], brightness_factor=(get_third_digit(task.address)))
+        while parent_prefix != '-1:0:0':
+            task = tasks[task.parents[0]]
+            parent_prefix = get_address_prefix(tasks[task.parents[0]].address)
+
+        return adjust_brightness(color_table[get_address_prefix(task.address)], brightness_factor=(get_third_digit(task.address)))
 
 
 ### COLOR ASSIGNMENT
@@ -200,7 +207,7 @@ def generate_base_colors(n):
 
 def adjust_brightness(color, brightness_factor):
     r, g, b = color
-    adjustment = (brightness_factor) * 0.3  # Smaller adjustment
+    adjustment = (brightness_factor) * 0.08  # Smaller adjustment
     new_r = max(0, min(1, r * (1 + adjustment)))
     new_g = max(0, min(1, g * (1 + adjustment)))
     new_b = max(0, min(1, b * (1 + adjustment)))
