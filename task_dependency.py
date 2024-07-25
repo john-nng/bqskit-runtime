@@ -285,7 +285,7 @@ if __name__ == '__main__':
     ideal_schedule = S.Schedule()
     
     regular_time = PlotSchedule(tasks, num_workers=num_workers, filename=workflow_name)
-    ideal_time = PlotSchedule(ideal_schedule, num_workers=S.num_workers, filename=S.name)
+    ideal_time = PlotSchedule(ideal_schedule, num_workers=S.num_workers, filename=S.name, regular_time=regular_time)
 
     slower_by = ((regular_time - ideal_time) / ideal_time) * 100
     print(f"{workflow_name} is {truncate_float(slower_by)}% slower than ideal schedule.")

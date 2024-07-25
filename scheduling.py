@@ -1,5 +1,5 @@
 from task_node import TaskNode
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from collections import deque, defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -80,10 +80,13 @@ class Scheduler():
 
         return sorted_tasks
 
-def PlotSchedule(tasks: Dict[str, TaskNode], num_workers: int, filename: str) -> int:
+def PlotSchedule(tasks: Dict[str, TaskNode], num_workers: int, filename: str, regular_time: Optional[int] = None) -> int:
     """ Plot schdule given tasks list"""
     fig, ax = plt.subplots(figsize=(10, num_workers))
     num_blocks = find_num_blocks(tasks=tasks)
+
+    # Coloring Policies dictionary
+    color_lookup = populate_color_lookup(tasks=tasks, num_blocks=num_blocks)
 
     for addr, task in tasks.items():
         start = task.start_time
@@ -93,23 +96,8 @@ def PlotSchedule(tasks: Dict[str, TaskNode], num_workers: int, filename: str) ->
         else: # task created from scheduler
             worker = task.worker
 
-        # Coloring Policies
-        color_lookup: Dict[str, Tuple[Tuple[float, float, float], int]] = {}
-        if get_address_prefix(addr) == '-1:0:0':
-            color = (0, 0, 0)
-        elif len(task.parents) > 1:
-            print(addr)
-            color, color_lookup = generate_color(address=addr, color_table=color_lookup, sync=False, num_blocks=num_blocks)
-        elif len(task.parents) == 1:
-            parent = task.parents[0]
-            # These are the children on the base task, give them a unique color
-            if parent == "-1:0:0:0":
-                
-                color, color_lookup = generate_color(address=addr, color_table=color_lookup, sync=False, num_blocks=num_blocks)
-            else:
-                # Color is based on parent
-                color, color_lookup = generate_color(address=parent, color_table=color_lookup, sync=False, num_blocks=num_blocks)
-                #color = generate_rgb(task.parents[0], n)
+        
+        color = generate_color(task, color_lookup)
         
         rect = patches.Rectangle((start, worker), duration, 1, edgecolor=color, facecolor=color, label=task.address)
         ax.add_patch(rect)
@@ -125,10 +113,21 @@ def PlotSchedule(tasks: Dict[str, TaskNode], num_workers: int, filename: str) ->
     # Set the x-axis range to cover all tasks
     total_time = max(task.start_time + task.duration for task in tasks.values())
     print(f"{filename} total time: {total_time}")
-    ax.set_xlim(0, total_time)
+    # make the x axis as long as a regular run of the workflow
+    if regular_time is not None:
+        ax.set_xlim(0, regular_time)
+    else:
+        ax.set_xlim(0, total_time)
     ax.set_ylim(0, num_workers)
 
+    # Add a legend explaining the color coding
+    same_color_patch = patches.Patch(color='blue', label='Same colors are correlated subtasks')
+    varying_darkness_patch = patches.Patch(color='blue', alpha=0.5, label='Varying darkness differentiates adjacent tasks within a subtask')
+    legend = ax.legend(handles=[same_color_patch, varying_darkness_patch], loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=1)
+    plt.legend = legend
+
     plt.title(filename)
+    plt.tight_layout()
     out_file = f"charts/{filename}.png"
     plt.savefig(out_file)
     plt.close(fig)
@@ -150,35 +149,39 @@ def get_third_digit(input_string):
     parts = input_string.split(':')
     return int(parts[2])
 
-def generate_color(
-    address: str,
-    color_table: Dict[str, Tuple[Tuple[float, float, float], int]], 
-    sync: bool, 
+def populate_color_lookup(
+    tasks: Dict[str, TaskNode],
     num_blocks: int
-    ) -> Tuple[Tuple[float, float, float], Dict[str, Tuple[Tuple[float, float, float], int]]]:
-
-    key = get_address_prefix(address=address)
-
-    if key not in color_table:
-        # Always set a default if the key does not exist
+    ) -> dict:
+    color_table = {}
+    for task in tasks.values():
+        key = get_third_digit(task.address)
         base_colors = generate_base_colors(num_blocks)
-        base_color = base_colors[get_third_digit(address) % num_blocks]
-        color_table[key] = (base_color, 0)
-    
-    if sync:
-        color = color_table[key][0]
-        # Reset depth
-        color_table[key] = (color, 0)
-        print(f"Resetting depth for {key}: {color_table[key]}")
-    else:
-        color = color_table[key][0]
-        depth = color_table[key][1] + 1
-        color_table[key] = (color, depth)
-        print(f"Updating depth for {key}: {color_table[key]}")
-        color = adjust_brightness(color=color, brightness_factor=depth)
-    
-    return color, color_table
-    
+        base_color = base_colors[get_third_digit(task.address) % num_blocks]
+        if not task.parents:
+            color_table[get_address_prefix(task.address)] = (0,0,0)
+        elif task.parents[0].startswith('-1:0:0'):
+            color_table[get_address_prefix(task.address)] = base_color
+
+    return color_table
+
+def generate_color(
+    task: TaskNode,
+    color_table: dict, 
+    ) -> Tuple[float, float, float]:
+
+    if get_address_prefix(task.address) == '-1:0:0':
+        return color_table[get_address_prefix(task.address)]
+
+    parent_prefix = get_address_prefix(address=task.parents[0])
+
+    if parent_prefix.startswith('-1:0:0'):
+        return color_table[get_address_prefix(task.address)]
+    elif len(task.parents) > 1:
+        return color_table[get_address_prefix(task.address)]
+    else :
+        return adjust_brightness(color_table[parent_prefix], brightness_factor=(get_third_digit(task.address)))
+
 
 ### COLOR ASSIGNMENT
 def parse_input(input_string):
@@ -197,7 +200,7 @@ def generate_base_colors(n):
 
 def adjust_brightness(color, brightness_factor):
     r, g, b = color
-    adjustment = (brightness_factor - 5) * 0.2  # Smaller adjustment
+    adjustment = (brightness_factor) * 0.3  # Smaller adjustment
     new_r = max(0, min(1, r * (1 + adjustment)))
     new_g = max(0, min(1, g * (1 + adjustment)))
     new_b = max(0, min(1, b * (1 + adjustment)))
