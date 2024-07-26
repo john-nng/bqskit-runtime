@@ -82,7 +82,7 @@ class Scheduler():
 
 def PlotSchedule(tasks: Dict[str, TaskNode], num_workers: int, filename: str, regular_time: Optional[int] = None) -> int:
     """ Plot schdule given tasks list"""
-    fig, ax = plt.subplots(figsize=(10, num_workers))
+    fig, ax = plt.subplots(figsize=(10, num_workers*0.4))
     num_blocks = find_num_blocks(tasks=tasks)
 
     # Coloring Policies dictionary
@@ -181,7 +181,10 @@ def generate_color(
     if parent_prefix.startswith('-1:0:0'):
         return color_table[get_address_prefix(task.address)]
     elif len(task.parents) > 1:
-        return color_table[get_address_prefix(task.address)]
+        while parent_prefix not in color_table.keys():
+            task = tasks[task.parents[0]]
+            parent_prefix = get_address_prefix(tasks[task.parents[0]].address)
+        return color_table[parent_prefix]
     else :
         while parent_prefix != '-1:0:0':
             task = tasks[task.parents[0]]
